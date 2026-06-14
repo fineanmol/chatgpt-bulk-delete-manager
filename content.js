@@ -1,4 +1,4 @@
-// ChatGPT Bulk Delete Manager - Content Script (Live Preview, Backup & Toast Edition)
+// ChatGPT Bulk Delete Manager - Content Script (Mockup Overhaul Edition)
 
 (function() {
   let accessToken = null;
@@ -7,6 +7,14 @@
   let currentPreviewId = null;
   let isDeleting = false;
   let cancelRequested = false;
+
+  // Pagination & Filtering state
+  let currentPage = 0;
+  const itemsPerPage = 10;
+  let searchQuery = '';
+  let timeFilter = 'all'; // 'all', '24h', '7d', '30d'
+  let typeFilter = 'all'; // 'all', 'untitled', 'checked', 'unchecked'
+  let activeTheme = 'light'; // 'light' or 'dark'
 
   // Initialize
   function init() {
@@ -25,6 +33,9 @@
         toggleManagerModal();
       }
     });
+
+    // Load saved theme preference
+    activeTheme = localStorage.getItem('cbd-theme') || 'light';
   }
 
   // Toggle modal display state
@@ -139,8 +150,7 @@
       </div>
     `;
 
-    let offset = 0;
-    const limit = 50;
+    currentPage = 0;
     allConversations = [];
     selectedIds.clear();
     currentPreviewId = null;
@@ -149,6 +159,9 @@
 
     try {
       let hasMore = true;
+      let offset = 0;
+      const limit = 50;
+      
       while (hasMore) {
         gridEl.innerHTML = `
           <div class="cbd-loader-container">
@@ -180,10 +193,10 @@
           hasMore = false;
         }
 
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 80));
       }
 
-      renderConversationsGrid(allConversations);
+      renderList();
       updateStats();
 
     } catch (error) {
@@ -198,32 +211,75 @@
     }
   }
 
-  // Render conversations inside the central grid
-  function renderConversationsGrid(conversations) {
+  // Get active filtered conversations
+  function getFilteredConversations() {
+    const now = Date.now();
+    return allConversations.filter(chat => {
+      // Search filter
+      const title = (chat.title || '').toLowerCase().trim();
+      if (searchQuery && !title.includes(searchQuery)) return false;
+
+      // Time range filter
+      if (timeFilter !== 'all') {
+        const chatTime = new Date(chat.update_time || chat.create_time).getTime();
+        const cutoff = timeFilter === '24h' ? now - 24 * 60 * 60 * 1000 :
+                       timeFilter === '7d'  ? now - 7 * 24 * 60 * 60 * 1000 :
+                                              now - 30 * 24 * 60 * 60 * 1000;
+        if (chatTime < cutoff) return false;
+      }
+
+      // Type/Selection filter
+      if (typeFilter !== 'all') {
+        const isChecked = selectedIds.has(chat.id);
+        if (typeFilter === 'checked' && !isChecked) return false;
+        if (typeFilter === 'unchecked' && isChecked) return false;
+        if (typeFilter === 'untitled' && !isChatUntitled(chat)) return false;
+      }
+
+      return true;
+    });
+  }
+
+  // Render list items based on filter and pagination
+  function renderList() {
     const gridEl = document.querySelector('.cbd-grid-container');
     if (!gridEl) return;
 
-    if (conversations.length === 0) {
+    const filtered = getFilteredConversations();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+    
+    // Bounds check
+    if (currentPage >= totalPages) currentPage = totalPages - 1;
+    if (currentPage < 0) currentPage = 0;
+
+    const startIndex = currentPage * itemsPerPage;
+    const pageItems = filtered.slice(startIndex, startIndex + itemsPerPage);
+
+    if (pageItems.length === 0) {
       gridEl.innerHTML = `
-        <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px; color: #8e8ea0;">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 12px; opacity: 0.5;">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted); grid-column: 1/-1;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 8px; opacity: 0.5;">
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="8" y1="12" x2="16" y2="12"></line>
           </svg>
-          No conversations found.
+          No conversations match your filter criteria.
         </div>
       `;
+      renderPaginationControls(0, 1);
       return;
     }
 
     let html = '';
-    conversations.forEach(chat => {
+    pageItems.forEach(chat => {
       const isChecked = selectedIds.has(chat.id) ? 'checked' : '';
       const isPreviewing = currentPreviewId === chat.id ? 'previewing' : '';
-      const formattedDate = formatDate(chat.update_time || chat.create_time);
-      const relativeTime = getRelativeTime(chat.update_time || chat.create_time);
+      const shortDate = formatShortDate(chat.update_time || chat.create_time);
       const isUntitled = isChatUntitled(chat);
       const untitledBadge = isUntitled ? '<span class="cbd-card-badge-untitled">Untitled</span>' : '';
+      
+      // ChatGPT doesn't expose message count directly, so we estimate, or display subtitle
+      // We will parse message count or placeholder
+      const msgCount = chat.message_count || (isUntitled ? 'No' : 'Multiple') + ' messages';
 
       html += `
         <div class="cbd-card ${isChecked ? 'selected' : ''} ${isPreviewing}" data-id="${chat.id}">
@@ -235,12 +291,9 @@
               <span class="cbd-card-title" title="${escapeHTML(chat.title || 'Untitled Chat')}">${escapeHTML(chat.title || 'Untitled Chat')}</span>
               ${untitledBadge}
             </div>
-            <div class="cbd-card-time" title="Last updated: ${formattedDate}">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline; vertical-align:middle; margin-right:4px;">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              ${relativeTime}
+            <div class="cbd-card-time-row">
+              <span class="cbd-card-msg-count">${msgCount}</span>
+              <span class="cbd-card-date">${shortDate}</span>
             </div>
           </div>
         </div>
@@ -249,24 +302,81 @@
 
     gridEl.innerHTML = html;
 
-    // Attach click listeners to cards
+    // Attach click listeners
     gridEl.querySelectorAll('.cbd-card').forEach(card => {
       const cb = card.querySelector('.cbd-card-cb');
       const id = card.getAttribute('data-id');
 
-      // Click card details: triggers live preview
       card.querySelector('.cbd-card-info').addEventListener('click', () => {
         triggerPreview(card, id);
       });
 
-      // Click checkbox directly: toggles selection for deletion
       cb.addEventListener('change', () => {
         toggleCardSelection(card, id, cb.checked);
       });
     });
+
+    // Render pagination footer
+    renderPaginationControls(currentPage, totalPages);
   }
 
-  // Toggle card select state for deletion
+  // Render pagination controls footer
+  function renderPaginationControls(current, total) {
+    const footerEl = document.querySelector('.cbd-pagination-container');
+    if (!footerEl) return;
+
+    let html = `
+      <button class="cbd-pag-btn" id="cbd-pag-prev" ${current === 0 ? 'disabled' : ''}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+    `;
+
+    // Simple paginator values: show surrounding pages
+    const maxVisiblePages = 5;
+    let startPage = Math.max(0, current - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(total, startPage + maxVisiblePages);
+
+    if (endPage - startPage < maxVisiblePages) {
+      startPage = Math.max(0, endPage - maxVisiblePages);
+    }
+
+    for (let i = startPage; i < endPage; i++) {
+      const isActive = i === current ? 'active' : '';
+      html += `<button class="cbd-pag-btn ${isActive} cbd-pag-num" data-page="${i}">${i + 1}</button>`;
+    }
+
+    html += `
+      <button class="cbd-pag-btn" id="cbd-pag-next" ${current === total - 1 ? 'disabled' : ''}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    `;
+
+    footerEl.innerHTML = html;
+
+    // Click events
+    footerEl.querySelectorAll('.cbd-pag-num').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentPage = parseInt(btn.getAttribute('data-page'), 10);
+        renderList();
+      });
+    });
+
+    footerEl.querySelector('#cbd-pag-prev').addEventListener('click', () => {
+      if (currentPage > 0) {
+        currentPage--;
+        renderList();
+      }
+    });
+
+    footerEl.querySelector('#cbd-pag-next').addEventListener('click', () => {
+      if (currentPage < total - 1) {
+        currentPage++;
+        renderList();
+      }
+    });
+  }
+
+  // Toggle selection states
   function toggleCardSelection(cardEl, id, isSelected) {
     if (isSelected) {
       selectedIds.add(id);
@@ -278,30 +388,34 @@
     updateStats();
   }
 
-  // Update selection statistics in the sidebar
+  // Update statistics details
   function updateStats() {
     const totalCount = allConversations.length;
+    const filtered = getFilteredConversations();
     const selectedCount = selectedIds.size;
     const delay = parseInt(document.getElementById('cbd-delay-slider')?.value || '1000', 10);
     const estSecs = Math.round((selectedCount * delay) / 1000);
 
-    const totalEl = document.getElementById('cbd-stat-total');
-    const selectedEl = document.getElementById('cbd-stat-selected');
-    const timeEl = document.getElementById('cbd-stat-time');
+    const statsLabel = document.getElementById('cbd-stats-count-label');
+    if (statsLabel) {
+      statsLabel.innerText = `${selectedCount} selected / ${totalCount} total`;
+    }
 
-    if (totalEl) totalEl.innerText = totalCount;
-    if (selectedEl) selectedEl.innerText = selectedCount;
-    if (timeEl) timeEl.innerText = `${estSecs}s`;
-
+    // Header buttons text and status updates
     const deleteBtn = document.getElementById('cbd-delete-btn');
     if (deleteBtn) {
-      deleteBtn.innerText = `Delete Selected (${selectedCount})`;
+      deleteBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        Delete Selected (${selectedCount})
+      `;
       deleteBtn.disabled = selectedCount === 0;
     }
 
     const exportBtn = document.getElementById('cbd-export-btn');
     if (exportBtn) {
-      exportBtn.innerText = `Backup Selected (${selectedCount})`;
       exportBtn.disabled = selectedCount === 0;
     }
   }
@@ -313,6 +427,9 @@
       modal = createDashboardDOM();
       document.body.appendChild(modal);
     }
+
+    // Set initial theme class
+    setTheme(activeTheme);
 
     setTimeout(() => modal.classList.add('active'), 50);
 
@@ -331,21 +448,21 @@
     }
   }
 
-  // Reset the right-hand preview panel back to the default empty state
+  // Reset dialogue preview panel
   function resetPreviewPanel() {
     const titleEl = document.getElementById('cbd-preview-title');
     const externalLink = document.getElementById('cbd-preview-external');
     const bodyEl = document.getElementById('cbd-preview-body');
+    const subtitleEl = document.getElementById('cbd-preview-msg-count');
 
-    if (titleEl) titleEl.innerText = 'Dialogue Preview';
-    if (externalLink) {
-      externalLink.style.display = 'none';
-      externalLink.href = '#';
-    }
+    if (titleEl) titleEl.innerText = 'Preview Window';
+    if (subtitleEl) subtitleEl.innerText = 'Select a conversation';
+    if (externalLink) externalLink.style.display = 'none';
+    
     if (bodyEl) {
       bodyEl.innerHTML = `
         <div class="cbd-preview-empty">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36" style="margin-bottom: 12px; opacity: 0.4;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36" style="margin-bottom: 12px; opacity: 0.35;">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
           <span>Select any conversation card on the left to preview its chat history.</span>
@@ -354,30 +471,31 @@
     }
   }
 
-  // Fetch chat history for selected conversation and render dialogue thread
+  // Trigger preview fetch
   async function triggerPreview(cardEl, id) {
-    // Remove previewing highlights from all other cards
     document.querySelectorAll('.cbd-card').forEach(card => card.classList.remove('previewing'));
-    
-    // Highlight active card
     cardEl.classList.add('previewing');
     currentPreviewId = id;
 
     const titleEl = document.getElementById('cbd-preview-title');
     const externalLink = document.getElementById('cbd-preview-external');
     const bodyEl = document.getElementById('cbd-preview-body');
+    const subtitleEl = document.getElementById('cbd-preview-msg-count');
 
     const chat = allConversations.find(c => c.id === id);
     const title = chat ? (chat.title || 'Untitled Chat') : 'Selected Chat';
     
-    titleEl.innerText = title;
-    externalLink.style.display = 'flex';
-    externalLink.href = `https://chatgpt.com/c/${id}`;
+    titleEl.innerText = `Preview: ${title}`;
+    if (subtitleEl) subtitleEl.innerText = 'Retrieving count...';
+    if (externalLink) {
+      externalLink.style.display = 'flex';
+      externalLink.href = `https://chatgpt.com/c/${id}`;
+    }
 
     bodyEl.innerHTML = `
       <div class="cbd-preview-loading">
         <div class="cbd-spinner"></div>
-        <span>Retrieving messages...</span>
+        <span>Retrieving dialogue...</span>
       </div>
     `;
 
@@ -398,26 +516,27 @@
       if (currentPreviewId !== id) return;
 
       const messages = getActiveConversationThread(data);
+      if (subtitleEl) subtitleEl.innerText = `${messages.length} messages`;
       renderMessages(bodyEl, messages);
 
     } catch (error) {
       console.error('[Bulk Manager] Error previewing conversation:', error);
       if (currentPreviewId === id) {
         bodyEl.innerHTML = `
-          <div class="cbd-preview-empty" style="color: #fca5a5;">
+          <div class="cbd-preview-empty" style="color: #f87171;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24" style="margin-bottom: 8px;">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            <span>Could not load chat dialogue.<br>Verify you are logged in and connected.</span>
+            <span>Could not load chat dialogue.<br>Verify your connection.</span>
           </div>
         `;
       }
     }
   }
 
-  // Trace thread from leaf node to root node
+  // Parse active conversation branch
   function getActiveConversationThread(data) {
     const thread = [];
     if (!data || !data.mapping || !data.current_node) return [];
@@ -442,7 +561,8 @@
             thread.push({
               id: msg.id,
               role: role,
-              text: text
+              text: text,
+              time: msg.create_time || 0
             });
           }
         }
@@ -453,7 +573,7 @@
     return thread.reverse();
   }
 
-  // Render dialogue thread list
+  // Render messages in dialog container
   function renderMessages(containerEl, messages) {
     if (messages.length === 0) {
       containerEl.innerHTML = `
@@ -468,18 +588,23 @@
     messages.forEach(msg => {
       const isUser = msg.role === 'user';
       const bubbleClass = isUser ? 'cbd-bubble-user' : 'cbd-bubble-assistant';
+      const formattedTime = formatFullDate(msg.time);
+      
       const avatarSvg = isUser ? 
-        `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cbd-avatar-svg"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>` : 
-        `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cbd-avatar-svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>`;
+        `<div class="cbd-bubble-avatar cbd-avatar-user"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>` : 
+        `<div class="cbd-bubble-avatar cbd-avatar-chatgpt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"></path><path d="M12 6v12M6 12h12M8.5 8.5l7 7M15.5 8.5l-7 7"></path></svg></div>`;
 
       html += `
-        <div class="cbd-bubble-wrapper ${isUser ? 'align-right' : 'align-left'}">
-          <div class="cbd-bubble-meta">
+        <div class="cbd-bubble-wrapper">
+          <div class="cbd-bubble-header-row">
             ${avatarSvg}
-            <span>${isUser ? 'You' : 'ChatGPT'}</span>
+            <span class="cbd-bubble-sender">${isUser ? 'You' : 'ChatGPT'}</span>
           </div>
-          <div class="cbd-bubble ${bubbleClass}">
-            ${escapeHTML(msg.text).replace(/\n/g, '<br>')}
+          <div class="cbd-bubble-content-block">
+            <div class="cbd-bubble ${bubbleClass}">
+              ${escapeHTML(msg.text).replace(/\n/g, '<br>')}
+            </div>
+            <span class="cbd-bubble-timestamp">${formattedTime}</span>
           </div>
         </div>
       `;
@@ -489,13 +614,9 @@
     containerEl.scrollTop = containerEl.scrollHeight;
   }
 
-  // Invert Selection Toggle
+  // Invert checkboxes selection states
   function invertSelection() {
-    const query = document.getElementById('cbd-search').value.toLowerCase();
-    const filtered = allConversations.filter(c => 
-      (c.title || '').toLowerCase().includes(query)
-    );
-
+    const filtered = getFilteredConversations();
     filtered.forEach(chat => {
       if (selectedIds.has(chat.id)) {
         selectedIds.delete(chat.id);
@@ -504,17 +625,95 @@
       }
     });
 
-    renderConversationsGrid(filtered);
+    renderList();
     updateStats();
   }
 
-  // Backup and Export Selected Conversations to Markdown File
+  // Select only untitled chats
+  function selectUntitledChats() {
+    allConversations.forEach(chat => {
+      if (isChatUntitled(chat)) {
+        selectedIds.add(chat.id);
+      }
+    });
+    currentPage = 0;
+    renderList();
+    updateStats();
+  }
+
+  // Select chats older than N days
+  function selectOlderChats(days) {
+    const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+    allConversations.forEach(chat => {
+      const chatTime = new Date(chat.update_time || chat.create_time).getTime();
+      if (chatTime < cutoff) {
+        selectedIds.add(chat.id);
+      }
+    });
+    currentPage = 0;
+    renderList();
+    updateStats();
+  }
+
+  // Clear selections
+  function clearSelections() {
+    selectedIds.clear();
+    renderList();
+    updateStats();
+  }
+
+  // Toggle Theme mode
+  function toggleTheme() {
+    const nextTheme = activeTheme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+  }
+
+  // Apply Theme styling
+  function setTheme(theme) {
+    activeTheme = theme;
+    localStorage.setItem('cbd-theme', theme);
+    
+    const overlay = document.querySelector('.cbd-modal-overlay');
+    if (!overlay) return;
+
+    const themeBtn = document.getElementById('cbd-theme-toggle');
+
+    if (theme === 'dark') {
+      overlay.classList.add('cbd-dark-theme');
+      if (themeBtn) {
+        themeBtn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        `;
+      }
+    } else {
+      overlay.classList.remove('cbd-dark-theme');
+      if (themeBtn) {
+        themeBtn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        `;
+      }
+    }
+  }
+
+  // Backup selected conversations to Markdown
   async function exportSelectedConversations() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
 
     const exportBtn = document.getElementById('cbd-export-btn');
-    const originalText = exportBtn.innerText;
+    const originalText = exportBtn.innerHTML;
     exportBtn.disabled = true;
 
     let markdownContent = `# ChatGPT Conversation Backup\n*Generated on ${new Date().toLocaleDateString()}*\n\n---\n\n`;
@@ -528,7 +727,10 @@
         const chat = allConversations.find(c => c.id === id);
         const title = chat ? (chat.title || 'Untitled Chat') : 'Untitled Chat';
 
-        exportBtn.innerText = `Backing Up ${i + 1}/${ids.length}...`;
+        exportBtn.innerHTML = `
+          <svg class="cbd-spinner-small" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="display:inline; margin-right:4px;"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path></svg>
+          Backing Up ${i + 1}/${ids.length}...
+        `;
 
         const response = await fetch(`/backend-api/conversation/${id}`, {
           headers: {
@@ -555,10 +757,9 @@
           markdownContent += `## Chat: ${title}\n*⚠️ Failed to fetch dialogue logs.*\n\n---\n\n`;
         }
 
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 120));
       }
 
-      // Trigger file download
       const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -647,8 +848,9 @@
       showToast(`Bulk deletion complete. Deleted: ${deletedCount}, Failed: ${failedCount}`, 'success');
     }
 
-    document.getElementById('cbd-search').value = '';
-    renderConversationsGrid(allConversations);
+    // Refresh view
+    currentPage = 0;
+    renderList();
     updateStats();
   }
 
@@ -685,44 +887,39 @@
 
     let iconSvg = '';
     if (type === 'success') {
-      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#05f2a1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="cbd-toast-icon-svg"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="3" class="cbd-toast-icon-svg"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
     } else if (type === 'error') {
-      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+      iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></svg>`;
     } else {
-      iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+      iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="3" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></svg>`;
     }
 
     toast.innerHTML = `
       <div class="cbd-toast-icon-wrapper">${iconSvg}</div>
       <div class="cbd-toast-content">${escapeHTML(message).replace(/\n/g, '<br>')}</div>
       <button class="cbd-toast-close">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     `;
 
     container.appendChild(toast);
 
-    // Fade/slide in
     setTimeout(() => toast.classList.add('active'), 50);
 
-    // Auto dismiss after 4 seconds
     const dismissTimer = setTimeout(() => {
       slideOutAndRemove(toast);
     }, 4000);
 
-    // Manual dismiss button
     toast.querySelector('.cbd-toast-close').addEventListener('click', () => {
       clearTimeout(dismissTimer);
       slideOutAndRemove(toast);
     });
   }
 
-  // Slide out and destroy node
   function slideOutAndRemove(toastNode) {
     toastNode.classList.remove('active');
     toastNode.addEventListener('transitionend', () => {
       toastNode.remove();
-      // Destroy container if empty
       const container = document.querySelector('.cbd-toast-container');
       if (container && container.childNodes.length === 0) {
         container.remove();
@@ -737,121 +934,162 @@
 
     overlay.innerHTML = `
       <div class="cbd-modal-container">
-        <!-- Dashboard Split Panel Layout (3 Columns) -->
-        <div class="cbd-dashboard-split">
-          
-          <!-- COLUMN 1: Sidebar Stats & Filters (25%) -->
-          <div class="cbd-dash-sidebar">
-            <div class="cbd-sidebar-logo">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="cbd-logo-svg">
+        <!-- 1. HEADER ROW: Brand & Global CTAs -->
+        <div class="cbd-header-bar">
+          <div class="cbd-header-brand">
+            <div class="cbd-brand-icon-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
-              <span>Bulk Manager</span>
             </div>
-
-            <!-- Stats grid -->
-            <div class="cbd-stats-grid">
-              <div class="cbd-stat-card">
-                <span class="cbd-stat-label">Total Chats</span>
-                <span class="cbd-stat-num" id="cbd-stat-total">0</span>
-              </div>
-              <div class="cbd-stat-card border-green">
-                <span class="cbd-stat-label">Selected</span>
-                <span class="cbd-stat-num" id="cbd-stat-selected">0</span>
-              </div>
-              <div class="cbd-stat-card border-purple">
-                <span class="cbd-stat-label">Est. Time</span>
-                <span class="cbd-stat-num" id="cbd-stat-time">0s</span>
-              </div>
-            </div>
-
-            <!-- Quick filters -->
-            <div class="cbd-sidebar-section">
-              <div class="cbd-section-title">QUICK SELECTION FILTERS</div>
-              <div class="cbd-filter-buttons">
-                <button class="cbd-filter-btn" id="cbd-filter-all">Select All Matching</button>
-                <button class="cbd-filter-btn" id="cbd-filter-invert">Invert Selections</button>
-                <button class="cbd-filter-btn" id="cbd-filter-untitled">Select Untitled / New Chats</button>
-                <button class="cbd-filter-btn" id="cbd-filter-7d">Select Older than 7 Days</button>
-                <button class="cbd-filter-btn" id="cbd-filter-30d">Select Older than 30 Days</button>
-                <button class="cbd-filter-btn" id="cbd-filter-none">Clear Selections</button>
-              </div>
-            </div>
-
-            <!-- Throttle speeds -->
-            <div class="cbd-sidebar-section">
-              <div class="cbd-section-title">DELETION DELAY</div>
-              <div class="cbd-delay-widget">
-                <div class="cbd-delay-display">Delay: <strong id="cbd-delay-val">1.0s</strong></div>
-                <input type="range" id="cbd-delay-slider" class="cbd-slider" min="500" max="3000" step="100" value="1000">
-              </div>
-              <div class="cbd-warning-tag">
-                ⚠️ Sequential delay prevents account lockouts.
-              </div>
-            </div>
-
-            <!-- Action buttons stack -->
-            <div class="cbd-sidebar-actions-stack">
-              <button class="cbd-export-action-btn" id="cbd-export-btn" disabled>Backup Selected (0)</button>
-              <button class="cbd-delete-action-btn" id="cbd-delete-btn" disabled>Delete Selected (0)</button>
-            </div>
+            <h1 class="cbd-brand-title">ChatGPT Bulk Delete Manager</h1>
           </div>
 
-          <!-- COLUMN 2: Conversations List & Grid (40%) -->
+          <div class="cbd-header-actions-group">
+            <button class="cbd-nav-btn" id="cbd-export-btn" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Export / Backup
+            </button>
+            <button class="cbd-nav-btn-danger" id="cbd-delete-btn" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Delete Selected (0)
+            </button>
+            <button class="cbd-icon-nav-btn" id="cbd-settings-btn" title="Settings / Rate Control">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+            <button class="cbd-icon-nav-btn" id="cbd-theme-toggle" title="Toggle Light/Dark Theme">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Hidden rate limit settings slide drawer -->
+        <div class="cbd-settings-drawer" id="cbd-settings-drawer">
+          <div class="cbd-settings-drawer-title">Queue Throttle Configuration</div>
+          <div class="cbd-settings-slider-wrapper">
+            <span>Rate Delay: <strong id="cbd-delay-val">1.0s</strong></span>
+            <input type="range" id="cbd-delay-slider" class="cbd-slider" min="500" max="3000" step="100" value="1000">
+          </div>
+          <span style="font-size:10px; color:var(--text-muted);">Adjust spacing between API requests to avoid account warning notifications.</span>
+        </div>
+
+        <!-- 2. SPLIT LAYOUT: Left Card-List (60%), Right Preview (40%) -->
+        <div class="cbd-dashboard-split">
+          
+          <!-- LEFT SIDE PANEL -->
           <div class="cbd-dash-main">
-            <div class="cbd-main-header">
+            <!-- Search & Filters Dropdown Row -->
+            <div class="cbd-filters-dropdowns-row">
               <div class="cbd-search-wrapper">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cbd-search-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="cbd-search-icon">
                   <circle cx="11" cy="11" r="8"></circle>
                   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
-                <input type="text" id="cbd-search" class="cbd-search-input" placeholder="Search conversations by title...">
+                <input type="text" id="cbd-search" class="cbd-search-input" placeholder="Search conversations...">
               </div>
               
-              <button class="cbd-action-btn cbd-btn-secondary" id="cbd-refresh-btn" title="Refresh List">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-                </svg>
-                Refresh
-              </button>
+              <select id="cbd-time-dropdown" class="cbd-select-filter">
+                <option value="all">All Time</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+
+              <select id="cbd-type-dropdown" class="cbd-select-filter">
+                <option value="all">All Chats</option>
+                <option value="untitled">Untitled Only</option>
+                <option value="checked">Checked Only</option>
+                <option value="unchecked">Unchecked Only</option>
+              </select>
             </div>
 
+            <!-- Quick Selection Filters Row -->
+            <div class="cbd-quick-filters-row">
+              <button class="cbd-quick-icon-btn" id="cbd-refresh-btn" title="Refresh List">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                </svg>
+              </button>
+              <button class="cbd-quick-filter-btn" id="cbd-btn-invert">Invert</button>
+              <button class="cbd-quick-filter-btn" id="cbd-btn-untitled">New Chats</button>
+              <button class="cbd-quick-filter-btn" id="cbd-btn-7d">Older Than 7d</button>
+              <button class="cbd-quick-filter-btn" id="cbd-btn-30d">Older Than 30d</button>
+            </div>
+
+            <!-- Subheader Count stats -->
+            <div class="cbd-stats-count-row" id="cbd-stats-count-label">0 selected / 0 total</div>
+
+            <!-- Conversations Cards Grid -->
             <div class="cbd-grid-container"></div>
+
+            <!-- Pagination Footer -->
+            <div class="cbd-pagination-container"></div>
           </div>
 
-          <!-- COLUMN 3: Live Preview Panel Drawer (35%) -->
+          <!-- RIGHT SIDE PANEL -->
           <div class="cbd-dash-preview">
             <div class="cbd-preview-header">
               <div class="cbd-preview-header-left">
-                <div class="cbd-preview-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                </div>
-                <h3 id="cbd-preview-title" class="cbd-preview-title-text">Dialogue Preview</h3>
+                <h3 id="cbd-preview-title" class="cbd-preview-title-text">Preview Window</h3>
+                <span id="cbd-preview-msg-count" class="cbd-preview-msg-count-sub">Select a chat</span>
               </div>
               
-              <div class="cbd-preview-header-right">
-                <a href="#" target="_blank" class="cbd-external-link" id="cbd-preview-external" style="display: none;">
-                  View Full Chat
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left: 3px;">
-                    <line x1="7" y1="17" x2="17" y2="7"></line>
-                    <polyline points="7 7 17 7 17 17"></polyline>
-                  </svg>
-                </a>
-                <button class="cbd-close-dashboard-btn" id="cbd-close-modal">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                </button>
-              </div>
+              <button class="cbd-preview-close-btn" id="cbd-reset-preview-btn" title="Close Preview">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
 
+            <!-- Scrollable chat thread body -->
             <div class="cbd-preview-body" id="cbd-preview-body"></div>
+
+            <!-- External link footer button -->
+            <div class="cbd-preview-footer">
+              <a href="#" target="_blank" class="cbd-view-full-btn" id="cbd-preview-external" style="display: none;">
+                View Full in ChatGPT
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="margin-left:4px;">
+                  <line x1="7" y1="17" x2="17" y2="7"></line>
+                  <polyline points="7 7 17 7 17 17"></polyline>
+                </svg>
+              </a>
+            </div>
           </div>
 
+        </div>
+
+        <!-- 3. FOOTER ROW: Status tips & badges -->
+        <div class="cbd-footer-bar">
+          <div class="cbd-footer-tip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2.5" style="margin-right:4px; flex-shrink:0;">
+              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
+              <line x1="9" y1="18" x2="15" y2="18"></line>
+              <line x1="10" y1="22" x2="14" y2="22"></line>
+            </svg>
+            <span>Tip: Press Alt+B (Option+B on Mac) to toggle this dashboard</span>
+          </div>
+
+          <div class="cbd-footer-badge">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2.5" style="margin-right:4px;">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>100% Private & Local &bull; Your data never leaves your browser</span>
+          </div>
         </div>
 
         <!-- Progress Dialog -->
@@ -867,26 +1105,64 @@
             <button class="cbd-action-btn cbd-btn-secondary" id="cbd-cancel-btn">Abort Queue</button>
           </div>
         </div>
+
       </div>
     `;
 
     // Hook up Events
-    overlay.querySelectorAll('#cbd-close-modal').forEach(el => {
-      el.addEventListener('click', closeManagerModal);
-    });
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closeManagerModal();
     });
 
-    const searchEl = overlay.querySelector('#cbd-search');
-    searchEl.addEventListener('input', handleSearch);
-
-    overlay.querySelector('#cbd-refresh-btn').addEventListener('click', () => {
-      const gridContainer = overlay.querySelector('.cbd-grid-container');
-      loadConversations(gridContainer);
+    // Toggle rate configuration drawer
+    overlay.querySelector('#cbd-settings-btn').addEventListener('click', () => {
+      const drawer = overlay.querySelector('#cbd-settings-drawer');
+      drawer.classList.toggle('active');
     });
 
-    // Slider
+    // Theme toggle
+    overlay.querySelector('#cbd-theme-toggle').addEventListener('click', toggleTheme);
+
+    // Search input
+    overlay.querySelector('#cbd-search').addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase().trim();
+      currentPage = 0;
+      renderList();
+      updateStats();
+    });
+
+    // Filters dropdowns
+    overlay.querySelector('#cbd-time-dropdown').addEventListener('change', (e) => {
+      timeFilter = e.target.value;
+      currentPage = 0;
+      renderList();
+      updateStats();
+    });
+
+    overlay.querySelector('#cbd-type-dropdown').addEventListener('change', (e) => {
+      typeFilter = e.target.value;
+      currentPage = 0;
+      renderList();
+      updateStats();
+    });
+
+    // Quick filter triggers
+    overlay.querySelector('#cbd-refresh-btn').addEventListener('click', () => {
+      loadConversations(overlay.querySelector('.cbd-grid-container'));
+    });
+    overlay.querySelector('#cbd-btn-invert').addEventListener('click', invertSelection);
+    overlay.querySelector('#cbd-btn-untitled').addEventListener('click', selectUntitledChats);
+    overlay.querySelector('#cbd-btn-7d').addEventListener('click', () => selectOlderChats(7));
+    overlay.querySelector('#cbd-btn-30d').addEventListener('click', () => selectOlderChats(30));
+
+    // Reset preview panel
+    overlay.querySelector('#cbd-reset-preview-btn').addEventListener('click', () => {
+      document.querySelectorAll('.cbd-card').forEach(card => card.classList.remove('previewing'));
+      currentPreviewId = null;
+      resetPreviewPanel();
+    });
+
+    // Slider Controls
     const slider = overlay.querySelector('#cbd-delay-slider');
     const sliderVal = overlay.querySelector('#cbd-delay-val');
     slider.addEventListener('input', (e) => {
@@ -895,15 +1171,7 @@
       updateStats();
     });
 
-    // Filters
-    overlay.querySelector('#cbd-filter-all').addEventListener('click', () => selectFiltered(true));
-    overlay.querySelector('#cbd-filter-none').addEventListener('click', () => selectFiltered(false));
-    overlay.querySelector('#cbd-filter-untitled').addEventListener('click', selectUntitledChats);
-    overlay.querySelector('#cbd-filter-7d').addEventListener('click', () => selectOlderChats(7));
-    overlay.querySelector('#cbd-filter-30d').addEventListener('click', () => selectOlderChats(30));
-    overlay.querySelector('#cbd-filter-invert').addEventListener('click', invertSelection);
-
-    // CTA Actions
+    // CTAs
     overlay.querySelector('#cbd-delete-btn').addEventListener('click', startDeletionProcess);
     overlay.querySelector('#cbd-export-btn').addEventListener('click', exportSelectedConversations);
     
@@ -917,66 +1185,32 @@
     return overlay;
   }
 
-  // Filter list search
-  function handleSearch(e) {
-    const query = e.target.value.toLowerCase();
-    const filtered = allConversations.filter(c => 
-      (c.title || '').toLowerCase().includes(query)
-    );
-    renderConversationsGrid(filtered);
+  // Short Date parser (M/D/YYYY)
+  function formatShortDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+    } catch (e) {
+      return '';
+    }
   }
 
-  // Select/deselect all filtered chats
-  function selectFiltered(shouldSelect) {
-    const query = document.getElementById('cbd-search').value.toLowerCase();
-    const filtered = allConversations.filter(c => 
-      (c.title || '').toLowerCase().includes(query)
-    );
-
-    filtered.forEach(chat => {
-      if (shouldSelect) {
-        selectedIds.add(chat.id);
-      } else {
-        selectedIds.delete(chat.id);
-      }
-    });
-
-    renderConversationsGrid(filtered);
-    updateStats();
-  }
-
-  // Select untitled chats
-  function selectUntitledChats() {
-    allConversations.forEach(chat => {
-      if (isChatUntitled(chat)) {
-        selectedIds.add(chat.id);
-      }
-    });
-    
-    const query = document.getElementById('cbd-search').value.toLowerCase();
-    const filtered = allConversations.filter(c => 
-      (c.title || '').toLowerCase().includes(query)
-    );
-    renderConversationsGrid(filtered);
-    updateStats();
-  }
-
-  // Select older chats
-  function selectOlderChats(days) {
-    const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
-    allConversations.forEach(chat => {
-      const chatTime = new Date(chat.update_time || chat.create_time).getTime();
-      if (chatTime < cutoff) {
-        selectedIds.add(chat.id);
-      }
-    });
-    
-    const query = document.getElementById('cbd-search').value.toLowerCase();
-    const filtered = allConversations.filter(c => 
-      (c.title || '').toLowerCase().includes(query)
-    );
-    renderConversationsGrid(filtered);
-    updateStats();
+  // Full Date Time parser (M/D/YYYY, H:MM AM/PM)
+  function formatFullDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      const short = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+      const time = date.toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      return `${short}, ${time}`;
+    } catch (e) {
+      return dateStr;
+    }
   }
 
   // Helper to check for default titles
@@ -987,48 +1221,6 @@
            title === 'untitled' || 
            title === 'untitled chat' || 
            title === 'new conversation';
-  }
-
-  // Formatting date
-  function formatDate(dateStr) {
-    if (!dateStr) return 'N/A';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, { 
-        month: 'short', 
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (e) {
-      return dateStr;
-    }
-  }
-
-  // Humanize relative time
-  function getRelativeTime(dateStr) {
-    if (!dateStr) return 'N/A';
-    try {
-      const timestamp = new Date(dateStr).getTime();
-      const now = Date.now();
-      const diffMs = now - timestamp;
-      
-      const diffMins = Math.floor(diffMs / (60 * 1000));
-      const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
-      const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'Yesterday';
-      if (diffDays < 30) return `${diffDays}d ago`;
-      
-      const diffMonths = Math.floor(diffDays / 30);
-      return `${diffMonths}mo ago`;
-    } catch (e) {
-      return 'N/A';
-    }
   }
 
   // HTML escape helper
