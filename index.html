@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - ChatGPT Bulk Delete Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0b0c10;
+      --card-bg: rgba(255, 255, 255, 0.02);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-color: #10a37f;
+      --accent-glow: rgba(16, 163, 127, 0.2);
+      --text-main: #f1f1f3;
+      --text-muted: #8e8ea0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6;
+      padding: 60px 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    /* Header Logo Styles */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(16, 163, 127, 0.1);
+      border: 1px solid var(--accent-color);
+      box-shadow: 0 0 15px var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-color);
+    }
+
+    .logo-icon svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      stroke-width: 2.5;
+      fill: none;
+    }
+
+    .logo-text h1 {
+      font-size: 20px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 40%, #a2ebd0 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-text p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Privacy Card */
+    .privacy-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
+
+    h2 {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .last-updated {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 30px;
+      display: block;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 30px 0;
+    }
+
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 24px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      font-size: 14px;
+      color: var(--text-main);
+      opacity: 0.9;
+      margin-bottom: 16px;
+    }
+
+    ul {
+      margin-left: 20px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: var(--text-main);
+      opacity: 0.9;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    li strong {
+      color: #fff;
+    }
+
+    /* Banner callout */
+    .callout {
+      background: rgba(16, 163, 127, 0.05);
+      border: 1px solid rgba(16, 163, 127, 0.15);
+      padding: 16px 20px;
+      border-radius: 10px;
+      color: #ececf1;
+      font-size: 13.5px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .callout strong {
+      color: var(--accent-color);
+    }
+
+    /* Footer styling */
+    footer {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--accent-color);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    footer a:hover {
+      color: #05f2a1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <h1>ChatGPT Bulk Delete Manager</h1>
+        <p>Chrome Extension</p>
+      </div>
+    </header>
+
+    <div class="privacy-card">
+      <h2>Privacy Policy</h2>
+      <span class="last-updated">Last Updated: June 14, 2026</span>
+
+      <div class="callout">
+        🛡️ <strong>Zero Data Collection Policy:</strong> This extension is built with a local-first design philosophy. None of your session data, conversations, or account configurations are sent to external servers or third parties. All processing happens entirely on your machine.
+      </div>
+
+      <p>This Privacy Policy describes how the "ChatGPT Bulk Delete Manager" Chrome Extension handles your data. We take user privacy extremely seriously and have engineered this tool to run completely locally inside your browser sandbox.</p>
+
+      <div class="divider"></div>
+
+      <h3>1. Information We Collect</h3>
+      <p>We do not collect any personal information, usage metrics, analytics, or private tokens. The extension operates with a zero-telemetry architecture. We do not have databases or remote tracking servers.</p>
+
+      <h3>2. Data Processing and Usage</h3>
+      <p>To enable multi-selection, live previews, backups, and bulk deletion, the extension must interact locally with ChatGPT's internal backend endpoints on the page. Here is how that data is processed:</p>
+      <ul>
+        <li><strong>Session Access Tokens:</strong> The extension queries your active browser session locally on <code>chatgpt.com</code> to acquire the session bearer token. This is used solely to authenticate pagination lists and deletion requests, and never leaves your browser.</li>
+        <li><strong>Conversation History List:</strong> The extension retrieves your chat list dynamically to render the dashboard checkboxes. This history is stored in temporary runtime memory and is destroyed when you close the manager modal.</li>
+        <li><strong>Dialogue Previews:</strong> Dialogue content is loaded in real-time only when you click a card to review it, and is rendered directly inside your tab's DOM tree.</li>
+        <li><strong>Local Backups:</strong> Dialogue text is converted locally in your browser to a Markdown file download. We do not store or mirror these backups.</li>
+      </ul>
+
+      <h3>3. Extension Permissions Justification</h3>
+      <p>The extension requires the following permissions in Google Chrome to perform its tasks:</p>
+      <ul>
+        <li><strong><code>activeTab</code>:</strong> Used to inject the dashboard UI (CSS styles and script elements) on top of the ChatGPT tab.</li>
+        <li><strong>Host Permissions (<code>https://chatgpt.com/*</code> & <code>https://chat.openai.com/*</code>):</strong> Required to allow the extension to read and write visibility states (deletion requests) for your active web sessions on those domains.</li>
+      </ul>
+
+      <h3>4. Third-Party Services</h3>
+      <p>This extension interacts with OpenAI's ChatGPT web interface. However, it is an independent developer tool and is not affiliated with, endorsed by, or sponsored by OpenAI. Any communication with OpenAI's backend APIs is subject to OpenAI's own Privacy Policy and Terms of Service.</p>
+
+      <h3>5. Changes to This Policy</h3>
+      <p>Since the project is open-source, any updates to the extension's behavior or privacy declarations will be logged and visible in our public GitHub repository commits.</p>
+
+      <h3>6. Contact & Support</h3>
+      <p>If you have any questions or would like to review the code yourself, please visit the official project repository at <a href="https://github.com/fineanmol/chatgpt-bulk-delete-manager" target="_blank" style="color: var(--accent-color); text-decoration: none;">GitHub</a>.</p>
+    </div>
+
+    <footer>
+      <p>Developed by <a href="https://github.com/fineanmol" target="_blank">fineanmol</a>. Released under the MIT License.</p>
+    </footer>
+  </div>
+</body>
+</html>
