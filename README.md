@@ -7,6 +7,8 @@
 
 A modern, desktop-grade dashboard Chrome Extension to bulk-select, preview, backup, and batch-delete your ChatGPT conversations directly in the browser for free. No OpenAI API keys required!
 
+🔒 **[View Our Privacy Policy](https://fineanmol.github.io/chatgpt-bulk-delete-manager/privacy.html)**
+
 ---
 
 ## ✨ Features
@@ -29,6 +31,7 @@ A modern, desktop-grade dashboard Chrome Extension to bulk-select, preview, back
 
 ## 🔒 Privacy & Security
 
+* 📑 **[Read our official Privacy Policy](https://fineanmol.github.io/chatgpt-bulk-delete-manager/privacy.html)**
 * **100% Local Execution:** Runs completely within your active browser tab sandbox.
 * **No Telemetry / External Servers:** The extension does not collect, track, or transmit any user data. Your session tokens and chat contents remain private to you.
 * **Open Source:** Review, build, and modify the source code locally.
