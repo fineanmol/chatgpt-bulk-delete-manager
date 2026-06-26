@@ -18,13 +18,8 @@
 
   // Initialize
   function init() {
-    // Inject launcher elements periodically to handle dynamic SPA changes
-    setInterval(injectSidebarButton, 2000);
-    setInterval(injectFloatingCapsule, 2000);
-
-    // Initial triggers
-    injectSidebarButton();
-    injectFloatingCapsule();
+    // Load saved theme preference
+    activeTheme = localStorage.getItem('cbd-theme') || 'light';
 
     // Register Keyboard Shortcut: Alt + B (Option + B on Mac)
     window.addEventListener('keydown', (e) => {
@@ -34,8 +29,22 @@
       }
     });
 
-    // Load saved theme preference
-    activeTheme = localStorage.getItem('cbd-theme') || 'light';
+    // Delay initial injection to allow React/Next.js hydration to complete safely
+    if (document.readyState === 'complete') {
+      setTimeout(startInjections, 2000);
+    } else {
+      window.addEventListener('load', () => {
+        setTimeout(startInjections, 2000);
+      });
+    }
+  }
+
+  // Start periodic injection intervals after hydration
+  function startInjections() {
+    injectSidebarButton();
+    injectFloatingCapsule();
+    setInterval(injectSidebarButton, 3000);
+    setInterval(injectFloatingCapsule, 3000);
   }
 
   // Toggle modal display state
