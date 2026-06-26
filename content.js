@@ -7,6 +7,9 @@
   let currentPreviewId = null;
   let isDeleting = false;
   let cancelRequested = false;
+  let cancelLoadRequested = false;
+  let isExportingChats = false;
+  let cancelExportRequested = false;
 
   // Pagination & Filtering state
   let currentPage = 0;
@@ -163,6 +166,7 @@
     allConversations = [];
     selectedIds.clear();
     currentPreviewId = null;
+    cancelLoadRequested = false;
     updateStats();
     resetPreviewPanel();
 
@@ -172,12 +176,26 @@
       const limit = 50;
       
       while (hasMore) {
+        if (cancelLoadRequested) {
+          break;
+        }
+
         gridEl.innerHTML = `
           <div class="cbd-loader-container">
             <div class="cbd-spinner"></div>
             <span>Fetched ${allConversations.length} items...</span>
+            <button class="cbd-action-btn cbd-btn-secondary" id="cbd-cancel-load-btn" style="margin-top: 8px; padding: 4px 10px; font-size: 11px;">Stop Loading</button>
           </div>
         `;
+
+        gridEl.querySelector('#cbd-cancel-load-btn')?.addEventListener('click', () => {
+          cancelLoadRequested = true;
+          const btn = gridEl.querySelector('#cbd-cancel-load-btn');
+          if (btn) {
+            btn.innerText = 'Stopping...';
+            btn.disabled = true;
+          }
+        });
 
         const response = await fetch(`/backend-api/conversations?offset=${offset}&limit=${limit}&order=updated`, {
           headers: {
@@ -203,6 +221,10 @@
         }
 
         await new Promise(r => setTimeout(r, 80));
+      }
+
+      if (cancelLoadRequested) {
+        showToast(`Loading stopped. Displaying ${allConversations.length} conversation(s).`, 'info');
       }
 
       renderList();
@@ -722,8 +744,18 @@
     if (ids.length === 0) return;
 
     const exportBtn = document.getElementById('cbd-export-btn');
+
+    if (isExportingChats) {
+      cancelExportRequested = true;
+      exportBtn.innerHTML = 'Stopping...';
+      exportBtn.disabled = true;
+      return;
+    }
+
+    isExportingChats = true;
+    cancelExportRequested = false;
+    exportBtn.disabled = false;
     const originalText = exportBtn.innerHTML;
-    exportBtn.disabled = true;
 
     let markdownContent = `# ChatGPT Conversation Backup\n*Generated on ${new Date().toLocaleDateString()}*\n\n---\n\n`;
     
@@ -732,13 +764,15 @@
       if (!token) throw new Error('Session unauthorized or expired');
 
       for (let i = 0; i < ids.length; i++) {
+        if (cancelExportRequested) break;
+
         const id = ids[i];
         const chat = allConversations.find(c => c.id === id);
         const title = chat ? (chat.title || 'Untitled Chat') : 'Untitled Chat';
 
         exportBtn.innerHTML = `
           <svg class="cbd-spinner-small" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="display:inline; margin-right:4px;"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path></svg>
-          Backing Up ${i + 1}/${ids.length}...
+          Stop Backup (${i + 1}/${ids.length})
         `;
 
         const response = await fetch(`/backend-api/conversation/${id}`, {
@@ -778,12 +812,19 @@
       link.click();
       document.body.removeChild(link);
       
-      showToast(`Backup successfully created for ${ids.length} chat(s)!`, 'success');
+      if (cancelExportRequested) {
+        showToast('Backup process stopped. Partial backup downloaded.', 'info');
+      } else {
+        showToast(`Backup successfully created for ${ids.length} chat(s)!`, 'success');
+      }
 
     } catch (error) {
       console.error('[Bulk Manager] Error exporting backups:', error);
       showToast('Failed to generate backup: ' + error.message, 'error');
     } finally {
+      isExportingChats = false;
+      cancelExportRequested = false;
+      exportBtn.innerHTML = originalText;
       exportBtn.disabled = false;
       updateStats();
     }
