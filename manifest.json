@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bulk Delete ChatGPT History & Chat Cleaner",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Bulk delete ChatGPT history, search chats, clear old conversations, and export to Markdown instantly for free.",
   "host_permissions": [
     "https://chatgpt.com/*",

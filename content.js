@@ -10,6 +10,7 @@
   let cancelLoadRequested = false;
   let isExportingChats = false;
   let cancelExportRequested = false;
+  let previewCache = new Map(); // Snappy cache for chat messages (id -> thread list)
 
   // Pagination & Filtering state
   let currentPage = 0;
@@ -76,12 +77,7 @@
       const btn = document.createElement('button');
       btn.className = 'cbd-sidebar-btn';
       btn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          <line x1="10" y1="11" x2="10" y2="17"></line>
-          <line x1="14" y1="11" x2="14" y2="17"></line>
-        </svg>
+        <img src="${chrome.runtime.getURL('icon16.png')}" alt="Bulk Manager" style="width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; margin-right: 4px;">
         Bulk Manager
       `;
       btn.addEventListener('click', openManagerModal);
@@ -104,11 +100,8 @@
     capsule.title = 'Open ChatGPT Bulk Manager (Alt + B)';
     capsule.innerHTML = `
       <div class="cbd-capsule-pulse"></div>
-      <div class="cbd-capsule-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        </svg>
+      <div class="cbd-capsule-icon" style="display: flex; align-items: center; justify-content: center;">
+        <img src="${chrome.runtime.getURL('icon48.png')}" alt="Bulk Clean" style="width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;">
       </div>
       <span class="cbd-capsule-text">Bulk Clean</span>
     `;
@@ -132,7 +125,7 @@
     }
   }
 
-  // Fetch and Load Chats History
+  // Fetch and Load Chats History (Parallel Polish Edition)
   async function loadConversations(gridEl) {
     gridEl.innerHTML = `
       <div class="cbd-loader-container">
@@ -165,62 +158,91 @@
     currentPage = 0;
     allConversations = [];
     selectedIds.clear();
+    previewCache.clear();
     currentPreviewId = null;
     cancelLoadRequested = false;
     updateStats();
     resetPreviewPanel();
 
     try {
-      let hasMore = true;
-      let offset = 0;
+      // 1. Fetch the first page to get total count
       const limit = 50;
-      
-      while (hasMore) {
-        if (cancelLoadRequested) {
-          break;
+      const firstResponse = await fetch(`/backend-api/conversations?offset=0&limit=${limit}&order=updated`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!firstResponse.ok) {
+        throw new Error('Failed to fetch conversation list');
+      }
+
+      const firstData = await firstResponse.json();
+      allConversations = firstData.items || [];
+      const total = firstData.total || allConversations.length;
+
+      // 2. Fetch remaining pages in parallel (concurrency limit of 5 for safety)
+      if (total > limit && !cancelLoadRequested) {
+        const offsets = [];
+        for (let offset = limit; offset < total; offset += limit) {
+          offsets.push(offset);
         }
 
-        gridEl.innerHTML = `
-          <div class="cbd-loader-container">
-            <div class="cbd-spinner"></div>
-            <span>Fetched ${allConversations.length} items...</span>
-            <button class="cbd-action-btn cbd-btn-secondary" id="cbd-cancel-load-btn" style="margin-top: 8px; padding: 4px 10px; font-size: 11px;">Stop Loading</button>
-          </div>
-        `;
+        let completedCount = 0;
+        const totalPagesToFetch = offsets.length;
 
-        gridEl.querySelector('#cbd-cancel-load-btn')?.addEventListener('click', () => {
-          cancelLoadRequested = true;
-          const btn = gridEl.querySelector('#cbd-cancel-load-btn');
-          if (btn) {
-            btn.innerText = 'Stopping...';
-            btn.disabled = true;
+        // Simple helper to fetch a page
+        const fetchPage = async (offset) => {
+          if (cancelLoadRequested) return [];
+          try {
+            const res = await fetch(`/backend-api/conversations?offset=${offset}&limit=${limit}&order=updated`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (!res.ok) return [];
+            const data = await res.json();
+            completedCount++;
+            
+            // Update UI progress
+            const progressPercent = Math.min(100, Math.round((completedCount / totalPagesToFetch) * 100));
+            gridEl.innerHTML = `
+              <div class="cbd-loader-container">
+                <div class="cbd-spinner"></div>
+                <span>Retrieving conversations: ${progressPercent}% loaded...</span>
+                <button class="cbd-action-btn cbd-btn-secondary" id="cbd-cancel-load-btn" style="margin-top: 8px; padding: 4px 10px; font-size: 11px;">Stop Loading</button>
+              </div>
+            `;
+            // Hook up cancel button on every render
+            gridEl.querySelector('#cbd-cancel-load-btn')?.addEventListener('click', () => {
+              cancelLoadRequested = true;
+              const btn = gridEl.querySelector('#cbd-cancel-load-btn');
+              if (btn) {
+                btn.innerText = 'Stopping...';
+                btn.disabled = true;
+              }
+            });
+
+            return data.items || [];
+          } catch (e) {
+            console.error(e);
+            return [];
           }
+        };
+
+        // Fetch in batches of 5 concurrent requests
+        const concurrencyLimit = 5;
+        const results = [];
+        for (let i = 0; i < offsets.length; i += concurrencyLimit) {
+          if (cancelLoadRequested) break;
+          const batch = offsets.slice(i, i + concurrencyLimit).map(fetchPage);
+          const batchResults = await Promise.all(batch);
+          results.push(...batchResults);
+        }
+
+        results.forEach(items => {
+          allConversations = allConversations.concat(items);
         });
-
-        const response = await fetch(`/backend-api/conversations?offset=${offset}&limit=${limit}&order=updated`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch offset ${offset}`);
-        }
-
-        const data = await response.json();
-
-        if (data.items && data.items.length > 0) {
-          allConversations = allConversations.concat(data.items);
-          offset += data.items.length;
-          
-          if (data.items.length < limit || allConversations.length >= data.total) {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-        }
-
-        await new Promise(r => setTimeout(r, 80));
       }
 
       if (cancelLoadRequested) {
@@ -253,10 +275,17 @@
       // Time range filter
       if (timeFilter !== 'all') {
         const chatTime = new Date(chat.update_time || chat.create_time).getTime();
-        const cutoff = timeFilter === '24h' ? now - 24 * 60 * 60 * 1000 :
-                       timeFilter === '7d'  ? now - 7 * 24 * 60 * 60 * 1000 :
-                                              now - 30 * 24 * 60 * 60 * 1000;
-        if (chatTime < cutoff) return false;
+        if (timeFilter === '24h') {
+          if (chatTime < now - 24 * 60 * 60 * 1000) return false;
+        } else if (timeFilter === '7d') {
+          if (chatTime < now - 7 * 24 * 60 * 60 * 1000) return false;
+        } else if (timeFilter === '30d') {
+          if (chatTime < now - 30 * 24 * 60 * 60 * 1000) return false;
+        } else if (timeFilter === 'older-7d') {
+          if (chatTime >= now - 7 * 24 * 60 * 60 * 1000) return false;
+        } else if (timeFilter === 'older-30d') {
+          if (chatTime >= now - 30 * 24 * 60 * 60 * 1000) return false;
+        }
       }
 
       // Type/Selection filter
@@ -285,6 +314,13 @@
 
     const startIndex = currentPage * itemsPerPage;
     const pageItems = filtered.slice(startIndex, startIndex + itemsPerPage);
+
+    // Update Select All on Page checkbox state
+    const selectAllCb = document.getElementById('cbd-select-all-cb');
+    if (selectAllCb) {
+      const allSelected = pageItems.length > 0 && pageItems.every(chat => selectedIds.has(chat.id));
+      selectAllCb.checked = allSelected;
+    }
 
     if (pageItems.length === 0) {
       gridEl.innerHTML = `
@@ -407,6 +443,24 @@
     });
   }
 
+  // Handle Select All on Page checkbox toggle action
+  function handleSelectAllPageToggle(checked) {
+    const filtered = getFilteredConversations();
+    const startIndex = currentPage * itemsPerPage;
+    const pageItems = filtered.slice(startIndex, startIndex + itemsPerPage);
+
+    pageItems.forEach(chat => {
+      if (checked) {
+        selectedIds.add(chat.id);
+      } else {
+        selectedIds.delete(chat.id);
+      }
+    });
+
+    renderList();
+    updateStats();
+  }
+
   // Toggle selection states
   function toggleCardSelection(cardEl, id, isSelected) {
     if (isSelected) {
@@ -416,6 +470,17 @@
       selectedIds.delete(id);
       cardEl.classList.remove('selected');
     }
+
+    // Update Select All on Page checkbox state
+    const filtered = getFilteredConversations();
+    const startIndex = currentPage * itemsPerPage;
+    const pageItems = filtered.slice(startIndex, startIndex + itemsPerPage);
+    const selectAllCb = document.getElementById('cbd-select-all-cb');
+    if (selectAllCb) {
+      const allSelected = pageItems.length > 0 && pageItems.every(chat => selectedIds.has(chat.id));
+      selectAllCb.checked = allSelected;
+    }
+
     updateStats();
   }
 
@@ -502,7 +567,7 @@
     }
   }
 
-  // Trigger preview fetch
+  // Trigger preview fetch (with Snappy Caching)
   async function triggerPreview(cardEl, id) {
     document.querySelectorAll('.cbd-card').forEach(card => card.classList.remove('previewing'));
     cardEl.classList.add('previewing');
@@ -517,11 +582,21 @@
     const title = chat ? (chat.title || 'Untitled Chat') : 'Selected Chat';
     
     titleEl.innerText = `Preview: ${title}`;
-    if (subtitleEl) subtitleEl.innerText = 'Retrieving count...';
+    
     if (externalLink) {
       externalLink.style.display = 'flex';
       externalLink.href = `https://chatgpt.com/c/${id}`;
     }
+
+    // Snappy Cache Hit Check
+    if (previewCache.has(id)) {
+      const messages = previewCache.get(id);
+      if (subtitleEl) subtitleEl.innerText = `${messages.length} messages`;
+      renderMessages(bodyEl, messages);
+      return;
+    }
+
+    if (subtitleEl) subtitleEl.innerText = 'Retrieving count...';
 
     bodyEl.innerHTML = `
       <div class="cbd-preview-loading">
@@ -547,6 +622,10 @@
       if (currentPreviewId !== id) return;
 
       const messages = getActiveConversationThread(data);
+      
+      // Save in cache
+      previewCache.set(id, messages);
+
       if (subtitleEl) subtitleEl.innerText = `${messages.length} messages`;
       renderMessages(bodyEl, messages);
 
@@ -662,7 +741,9 @@
 
   // Select only untitled chats
   function selectUntitledChats() {
-    allConversations.forEach(chat => {
+    selectedIds.clear();
+    const visibleChats = getFilteredConversations();
+    visibleChats.forEach(chat => {
       if (isChatUntitled(chat)) {
         selectedIds.add(chat.id);
       }
@@ -674,8 +755,10 @@
 
   // Select chats older than N days
   function selectOlderChats(days) {
+    selectedIds.clear();
     const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
-    allConversations.forEach(chat => {
+    const visibleChats = getFilteredConversations();
+    visibleChats.forEach(chat => {
       const chatTime = new Date(chat.update_time || chat.create_time).getTime();
       if (chatTime < cutoff) {
         selectedIds.add(chat.id);
@@ -830,14 +913,60 @@
     }
   }
 
-  // Deletion process loop
-  async function startDeletionProcess() {
+  // Request confirmation via a custom toast notification with action buttons (Production-grade)
+  function confirmDeletion() {
     const count = selectedIds.size;
     if (count === 0) return;
 
-    const confirmed = confirm(`🛑 WARNING: You are about to permanently delete ${count} conversation(s).\n\nThis action cannot be undone. Are you sure you want to proceed?`);
-    if (!confirmed) return;
+    // Show custom warning toast inside the dashboard toast container
+    let container = document.querySelector('.cbd-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'cbd-toast-container';
+      document.body.appendChild(container);
+    }
 
+    // Remove any existing confirm toasts to avoid duplicates
+    const existing = container.querySelector('.cbd-toast-confirm-action');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'cbd-toast cbd-toast-confirm-action';
+    
+    toast.innerHTML = `
+      <div style="display: flex; align-items: flex-start; gap: 10px; width: 100%;">
+        <div class="cbd-toast-icon-wrapper" style="color: var(--cbd-accent-danger-start); display: flex; align-items: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </div>
+        <div class="cbd-toast-content" style="font-weight: 700; font-size: 12px; color: var(--cbd-text-main); line-height: 1.4;">
+          Permanently delete ${count} selected chat(s)? This action cannot be undone.
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 4px;">
+        <button id="cbd-confirm-cancel-btn" class="cbd-pag-btn" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; text-transform: none; border: 1px solid var(--cbd-border); background: transparent; color: var(--cbd-text-main);">Cancel</button>
+        <button id="cbd-confirm-delete-btn" class="cbd-nav-btn-danger" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; text-transform: none; margin-left: 4px; background: var(--cbd-accent-danger-start); border: none; color: #fff; cursor: pointer;">Yes, Delete</button>
+      </div>
+    `;
+
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add('active'), 50);
+
+    toast.querySelector('#cbd-confirm-cancel-btn').addEventListener('click', () => {
+      slideOutAndRemove(toast);
+    });
+
+    toast.querySelector('#cbd-confirm-delete-btn').addEventListener('click', () => {
+      slideOutAndRemove(toast);
+      executeDeletionQueue();
+    });
+  }
+
+  // Deletion execution queue process loop (Production-grade)
+  async function executeDeletionQueue() {
     const overlay = document.querySelector('.cbd-modal-overlay');
     const progressOverlay = overlay.querySelector('.cbd-progress-overlay');
     const progressBarFill = overlay.querySelector('.cbd-progress-bar-fill');
@@ -848,7 +977,7 @@
 
     isDeleting = true;
     cancelRequested = false;
-    cancelBtn.innerText = 'Abort Queue';
+    cancelBtn.innerText = 'Stop Deletion';
     cancelBtn.disabled = false;
     progressOverlay.classList.add('active');
 
@@ -868,7 +997,7 @@
       const percent = Math.round((i / idsToDelete.length) * 100);
       progressBarFill.style.width = `${percent}%`;
       progressPercent.innerText = `${percent}%`;
-      progressStats.innerText = `Deleting conversation ${i + 1} of ${idsToDelete.length}`;
+      progressStats.innerText = `Deleting conversation ${i + 1} of ${idsToDelete.length}...`;
       currentTitleEl.innerText = `Current: "${chatTitle}"`;
 
       const success = await deleteConversationAPI(id);
@@ -891,11 +1020,15 @@
     progressOverlay.classList.remove('active');
 
     if (cancelRequested) {
-      showToast(`Deletion aborted. Deleted: ${deletedCount}, Failed: ${failedCount}`, 'info');
+      showToast(`Deletion stopped. Deleted ${deletedCount} chat(s), failed ${failedCount}.`, 'info');
     } else {
       progressBarFill.style.width = '100%';
       progressPercent.innerText = '100%';
-      showToast(`Bulk deletion complete. Deleted: ${deletedCount}, Failed: ${failedCount}`, 'success');
+      if (failedCount > 0) {
+        showToast(`Deletion complete. Deleted ${deletedCount} chat(s), failed ${failedCount}.`, 'warning');
+      } else {
+        showToast(`Successfully deleted ${deletedCount} chat(s).`, 'success');
+      }
     }
 
     // Refresh view
@@ -987,11 +1120,8 @@
         <!-- 1. HEADER ROW: Brand & Global CTAs -->
         <div class="cbd-header-bar">
           <div class="cbd-header-brand">
-            <div class="cbd-brand-icon-box">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+            <div class="cbd-brand-icon-box" style="display: flex; align-items: center; justify-content: center; background: transparent; border: none; padding: 0;">
+              <img src="${chrome.runtime.getURL('icon128.png')}" alt="Logo" style="width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;">
             </div>
             <h1 class="cbd-brand-title">Bulk Delete ChatGPT History</h1>
           </div>
@@ -1056,6 +1186,8 @@
                 <option value="24h">Last 24 Hours</option>
                 <option value="7d">Last 7 Days</option>
                 <option value="30d">Last 30 Days</option>
+                <option value="older-7d">Older than 7 Days</option>
+                <option value="older-30d">Older than 30 Days</option>
               </select>
 
               <select id="cbd-type-dropdown" class="cbd-select-filter">
@@ -1079,8 +1211,14 @@
               <button class="cbd-quick-filter-btn" id="cbd-btn-30d">Older Than 30d</button>
             </div>
 
-            <!-- Subheader Count stats -->
-            <div class="cbd-stats-count-row" id="cbd-stats-count-label">0 selected / 0 total</div>
+            <!-- Subheader Count stats & Select All Checkbox -->
+            <div class="cbd-stats-count-row">
+              <div class="cbd-select-all-wrapper">
+                <input type="checkbox" id="cbd-select-all-cb" class="cbd-checkbox">
+                <label for="cbd-select-all-cb">Select All on Page</label>
+              </div>
+              <span id="cbd-stats-count-label">0 selected / 0 total</span>
+            </div>
 
             <!-- Conversations Cards Grid -->
             <div class="cbd-grid-container"></div>
@@ -1205,6 +1343,11 @@
     overlay.querySelector('#cbd-btn-7d').addEventListener('click', () => selectOlderChats(7));
     overlay.querySelector('#cbd-btn-30d').addEventListener('click', () => selectOlderChats(30));
 
+    // Select All Checkbox
+    overlay.querySelector('#cbd-select-all-cb').addEventListener('change', (e) => {
+      handleSelectAllPageToggle(e.target.checked);
+    });
+
     // Reset preview panel
     overlay.querySelector('#cbd-reset-preview-btn').addEventListener('click', () => {
       document.querySelectorAll('.cbd-card').forEach(card => card.classList.remove('previewing'));
@@ -1222,13 +1365,13 @@
     });
 
     // CTAs
-    overlay.querySelector('#cbd-delete-btn').addEventListener('click', startDeletionProcess);
+    overlay.querySelector('#cbd-delete-btn').addEventListener('click', confirmDeletion);
     overlay.querySelector('#cbd-export-btn').addEventListener('click', exportSelectedConversations);
     
     // Abort
     overlay.querySelector('#cbd-cancel-btn').addEventListener('click', () => {
       cancelRequested = true;
-      overlay.querySelector('#cbd-cancel-btn').innerText = 'Aborting...';
+      overlay.querySelector('#cbd-cancel-btn').innerText = 'Stopping...';
       overlay.querySelector('#cbd-cancel-btn').disabled = true;
     });
 

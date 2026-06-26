@@ -119,24 +119,24 @@
   --cbd-bg-preview: #f8fafc;
   --cbd-bg-card: #ffffff;
   --cbd-bg-card-hover: #f1f5f9;
-  --cbd-bg-card-selected: rgba(99, 102, 241, 0.05);
-  --cbd-bg-card-previewing: rgba(139, 92, 246, 0.05);
+  --cbd-bg-card-selected: rgba(16, 163, 127, 0.05);
+  --cbd-bg-card-previewing: rgba(13, 148, 136, 0.05);
   --cbd-border: #e2e8f0;
   --cbd-border-hover: #cbd5e1;
-  --cbd-border-glow: #6366f1;
+  --cbd-border-glow: #10a37f;
   --cbd-text-main: #0f172a;
   --cbd-text-muted: #64748b;
   --cbd-text-white: #ffffff;
   
   --cbd-accent-green-start: #10a37f;
   --cbd-accent-green-end: #0d9488;
-  --cbd-accent-purple-start: #6366f1;
-  --cbd-accent-purple-end: #8b5cf6;
+  --cbd-accent-purple-start: #10a37f;
+  --cbd-accent-purple-end: #0d9488;
   --cbd-accent-danger-start: #ef4444;
   --cbd-accent-danger-end: #dc2626;
 
-  --cbd-bg-bubble-user: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-  --cbd-border-bubble-user: rgba(99, 102, 241, 0.15);
+  --cbd-bg-bubble-user: linear-gradient(135deg, rgba(16, 163, 127, 0.08) 0%, rgba(13, 148, 136, 0.08) 100%);
+  --cbd-border-bubble-user: rgba(16, 163, 127, 0.15);
   --cbd-color-bubble-user: #0f172a;
   --cbd-bg-bubble-assistant: #f1f5f9;
   --cbd-border-bubble-assistant: #e2e8f0;
@@ -186,23 +186,23 @@
   --cbd-bg-preview: #141b2d;
   --cbd-bg-card: rgba(255, 255, 255, 0.02);
   --cbd-bg-card-hover: rgba(255, 255, 255, 0.05);
-  --cbd-bg-card-selected: rgba(99, 102, 241, 0.15);
-  --cbd-bg-card-previewing: rgba(139, 92, 246, 0.15);
+  --cbd-bg-card-selected: rgba(16, 163, 127, 0.15);
+  --cbd-bg-card-previewing: rgba(13, 148, 136, 0.15);
   --cbd-border: #232c45;
   --cbd-border-hover: #334169;
-  --cbd-border-glow: #8b5cf6;
+  --cbd-border-glow: #05f2a1;
   --cbd-text-main: #f1f5f9;
   --cbd-text-muted: #94a3b8;
   
   --cbd-accent-green-start: #10a37f;
   --cbd-accent-green-end: #05f2a1;
-  --cbd-accent-purple-start: #7c3aed;
-  --cbd-accent-purple-end: #c084fc;
+  --cbd-accent-purple-start: #10a37f;
+  --cbd-accent-purple-end: #05f2a1;
   --cbd-accent-danger-start: #ef4444;
   --cbd-accent-danger-end: #f43f5e;
 
-  --cbd-bg-bubble-user: linear-gradient(135deg, rgba(124, 58, 237, 0.25) 0%, rgba(192, 132, 252, 0.25) 100%);
-  --cbd-border-bubble-user: rgba(192, 132, 252, 0.35);
+  --cbd-bg-bubble-user: linear-gradient(135deg, rgba(16, 163, 127, 0.25) 0%, rgba(5, 242, 161, 0.25) 100%);
+  --cbd-border-bubble-user: rgba(5, 242, 161, 0.35);
   --cbd-color-bubble-user: #f8fafc;
   --cbd-bg-bubble-assistant: rgba(255, 255, 255, 0.04);
   --cbd-border-bubble-assistant: rgba(255, 255, 255, 0.06);
@@ -639,7 +639,10 @@
 
 /* stats counter display text */
 .cbd-stats-count-row {
-  padding: 10px 16px 4px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
   font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
@@ -647,6 +650,19 @@
   color: var(--cbd-text-muted);
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.cbd-select-all-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cbd-select-all-wrapper label {
+  cursor: pointer;
 }
 
 /* Cards scroll grid */
@@ -1470,4 +1486,13 @@
 
 .cbd-toast-info {
   border-left: 4px solid var(--cbd-accent-purple-start);
+}
+
+/* Interactive Confirm Action Toast */
+.cbd-toast.cbd-toast-confirm-action {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 16px;
+  gap: 12px;
+  min-width: 320px;
 }
