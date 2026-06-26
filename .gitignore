@@ -11,3 +11,20 @@ Thumbs.db
 *.zip
 *.crx
 *.pem
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env
+*.local
