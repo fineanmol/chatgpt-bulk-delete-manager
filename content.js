@@ -1,6 +1,20 @@
 // ChatGPT Bulk Delete Manager - Content Script (Mockup Overhaul Edition)
 
 (function() {
+  // Safe wrapper: chrome.runtime can be undefined if the extension context
+  // is invalidated (e.g. after a reload or update). Fall back to '' so the
+  // img src is simply empty rather than throwing a TypeError.
+  function getExtURL(path) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        return chrome.runtime.getURL(path);
+      }
+    } catch (e) {
+      console.warn('[Bulk Manager] chrome.runtime not available:', e);
+    }
+    return '';
+  }
+
   let accessToken = null;
   let allConversations = [];
   let selectedIds = new Set();
@@ -80,7 +94,7 @@
       const btn = document.createElement('button');
       btn.className = 'cbd-sidebar-btn';
       btn.innerHTML = `
-        <img src="${chrome.runtime.getURL('icon16.png')}" alt="Bulk Manager" style="width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; margin-right: 4px;">
+        <img src="${getExtURL('icon16.png')}" alt="Bulk Manager" style="width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; margin-right: 4px;">
         Bulk Manager
       `;
       btn.addEventListener('click', openManagerModal);
@@ -104,7 +118,7 @@
     capsule.innerHTML = `
       <div class="cbd-capsule-pulse"></div>
       <div class="cbd-capsule-icon" style="display: flex; align-items: center; justify-content: center;">
-        <img src="${chrome.runtime.getURL('icon48.png')}" alt="Bulk Clean" style="width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;">
+        <img src="${getExtURL('icon48.png')}" alt="Bulk Clean" style="width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;">
       </div>
       <span class="cbd-capsule-text">Bulk Clean</span>
     `;
@@ -1206,7 +1220,7 @@
         <div class="cbd-header-bar">
           <div class="cbd-header-brand">
             <div class="cbd-brand-icon-box" style="display: flex; align-items: center; justify-content: center; background: transparent; border: none; padding: 0;">
-              <img src="${chrome.runtime.getURL('icon128.png')}" alt="Logo" style="width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;">
+              <img src="${getExtURL('icon128.png')}" alt="Logo" style="width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;">
             </div>
             <h1 class="cbd-brand-title">Bulk Delete ChatGPT History</h1>
           </div>
