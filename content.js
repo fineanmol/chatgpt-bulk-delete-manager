@@ -19,11 +19,14 @@
   let timeFilter = 'all'; // 'all', '24h', '7d', '30d'
   let typeFilter = 'all'; // 'all', 'untitled', 'checked', 'unchecked'
   let activeTheme = 'light'; // 'light' or 'dark'
+  let actionMode = 'delete'; // 'delete' (is_visible: false) or 'archive' (is_archived: true)
 
   // Initialize
   function init() {
     // Load saved theme preference
     activeTheme = localStorage.getItem('cbd-theme') || 'light';
+    // Load saved action mode preference
+    actionMode = localStorage.getItem('cbd-action-mode') || 'delete';
 
     // Register Keyboard Shortcut: Alt + B (Option + B on Mac)
     window.addEventListener('keydown', (e) => {
@@ -268,9 +271,21 @@
   function getFilteredConversations() {
     const now = Date.now();
     return allConversations.filter(chat => {
-      // Search filter
+      // Search filter (Matches title or cached message logs)
       const title = (chat.title || '').toLowerCase().trim();
-      if (searchQuery && !title.includes(searchQuery)) return false;
+      if (searchQuery) {
+        const titleMatch = title.includes(searchQuery);
+        let contentMatch = false;
+        
+        const cachedMessages = previewCache.get(chat.id);
+        if (cachedMessages) {
+          contentMatch = cachedMessages.some(msg => 
+            (msg.text || '').toLowerCase().includes(searchQuery)
+          );
+        }
+        
+        if (!titleMatch && !contentMatch) return false;
+      }
 
       // Time range filter
       if (timeFilter !== 'all') {
@@ -500,13 +515,28 @@
     // Header buttons text and status updates
     const deleteBtn = document.getElementById('cbd-delete-btn');
     if (deleteBtn) {
-      deleteBtn.innerHTML = `
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
+      const btnText = actionMode === 'archive' ? 'Archive Selected' : 'Delete Selected';
+      const iconSvg = actionMode === 'archive' ? 
+        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
+          <polyline points="21 8 21 21 3 21 3 8"></polyline>
+          <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+          <line x1="10" y1="12" x2="14" y2="12"></line>
+        </svg>` :
+        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
           <polyline points="3 6 5 6 21 6"></polyline>
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        </svg>
-        Delete Selected (${selectedCount})
+        </svg>`;
+      
+      deleteBtn.innerHTML = `
+        ${iconSvg}
+        ${btnText} (${selectedCount})
       `;
+      
+      if (actionMode === 'archive') {
+        deleteBtn.className = 'cbd-nav-btn';
+      } else {
+        deleteBtn.className = 'cbd-nav-btn-danger';
+      }
       deleteBtn.disabled = selectedCount === 0;
     }
 
@@ -933,9 +963,15 @@
     const toast = document.createElement('div');
     toast.className = 'cbd-toast cbd-toast-confirm-action';
     
+    const actionVerb = actionMode === 'archive' ? 'archive' : 'permanently delete';
+    const actionWarning = actionMode === 'archive' ? 'They will be moved to your ChatGPT archive.' : 'This action cannot be undone.';
+    const confirmButtonText = actionMode === 'archive' ? 'Yes, Archive' : 'Yes, Delete';
+    const confirmButtonBg = actionMode === 'archive' ? 'var(--cbd-accent-green-start)' : 'var(--cbd-accent-danger-start)';
+    const iconColor = actionMode === 'archive' ? 'var(--cbd-accent-green-start)' : 'var(--cbd-accent-danger-start)';
+    
     toast.innerHTML = `
       <div style="display: flex; align-items: flex-start; gap: 10px; width: 100%;">
-        <div class="cbd-toast-icon-wrapper" style="color: var(--cbd-accent-danger-start); display: flex; align-items: center;">
+        <div class="cbd-toast-icon-wrapper" style="color: ${iconColor}; display: flex; align-items: center;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -943,12 +979,12 @@
           </svg>
         </div>
         <div class="cbd-toast-content" style="font-weight: 700; font-size: 12px; color: var(--cbd-text-main); line-height: 1.4;">
-          Permanently delete ${count} selected chat(s)? This action cannot be undone.
+          Do you want to ${actionVerb} ${count} selected chat(s)? ${actionWarning}
         </div>
       </div>
       <div style="display: flex; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 4px;">
         <button id="cbd-confirm-cancel-btn" class="cbd-pag-btn" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; text-transform: none; border: 1px solid var(--cbd-border); background: transparent; color: var(--cbd-text-main);">Cancel</button>
-        <button id="cbd-confirm-delete-btn" class="cbd-nav-btn-danger" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; text-transform: none; margin-left: 4px; background: var(--cbd-accent-danger-start); border: none; color: #fff; cursor: pointer;">Yes, Delete</button>
+        <button id="cbd-confirm-delete-btn" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; text-transform: none; margin-left: 4px; background: ${confirmButtonBg}; border: none; color: #fff; cursor: pointer;">${confirmButtonText}</button>
       </div>
     `;
 
@@ -977,9 +1013,20 @@
 
     isDeleting = true;
     cancelRequested = false;
-    cancelBtn.innerText = 'Stop Deletion';
+    
+    const processVerb = actionMode === 'archive' ? 'Archive' : 'Deletion';
+    const activeVerb = actionMode === 'archive' ? 'Archiving' : 'Permanently deleting';
+    const resultVerbPast = actionMode === 'archive' ? 'archived' : 'deleted';
+    const resultVerbPastCapital = actionMode === 'archive' ? 'Archived' : 'Deleted';
+    
+    cancelBtn.innerText = `Stop ${processVerb}`;
     cancelBtn.disabled = false;
     progressOverlay.classList.add('active');
+    
+    const progressTitle = overlay.querySelector('.cbd-progress-title');
+    if (progressTitle) {
+      progressTitle.innerText = actionMode === 'archive' ? 'Processing Bulk Archive Queue' : 'Processing Bulk Deletion Queue';
+    }
 
     const idsToDelete = Array.from(selectedIds);
     const delay = parseInt(document.getElementById('cbd-delay-slider').value, 10);
@@ -997,7 +1044,7 @@
       const percent = Math.round((i / idsToDelete.length) * 100);
       progressBarFill.style.width = `${percent}%`;
       progressPercent.innerText = `${percent}%`;
-      progressStats.innerText = `Deleting conversation ${i + 1} of ${idsToDelete.length}...`;
+      progressStats.innerText = `${activeVerb} chat ${i + 1} of ${idsToDelete.length}...`;
       currentTitleEl.innerText = `Current: "${chatTitle}"`;
 
       const success = await deleteConversationAPI(id);
@@ -1020,14 +1067,18 @@
     progressOverlay.classList.remove('active');
 
     if (cancelRequested) {
-      showToast(`Deletion stopped. Deleted ${deletedCount} chat(s), failed ${failedCount}.`, 'info');
+      showToast(`${processVerb} stopped. ${resultVerbPastCapital} ${deletedCount} chat(s), failed ${failedCount}.`, 'info');
     } else {
       progressBarFill.style.width = '100%';
       progressPercent.innerText = '100%';
       if (failedCount > 0) {
-        showToast(`Deletion complete. Deleted ${deletedCount} chat(s), failed ${failedCount}.`, 'warning');
+        showToast(`${processVerb} complete. Successfully ${resultVerbPast} ${deletedCount} chat(s), failed ${failedCount}.`, 'warning');
       } else {
-        showToast(`Successfully deleted ${deletedCount} chat(s).`, 'success');
+        if (deletedCount >= 5) {
+          showToast(`Successfully ${resultVerbPast} ${deletedCount} chat(s).`, 'success-share');
+        } else {
+          showToast(`Successfully ${resultVerbPast} ${deletedCount} chat(s).`, 'success');
+        }
       }
     }
 
@@ -1037,21 +1088,22 @@
     updateStats();
   }
 
-  // Patch visibility endpoint
+  // Patch visibility or archived state (Production-grade)
   async function deleteConversationAPI(conversationId) {
     if (!accessToken) return false;
     try {
+      const body = actionMode === 'archive' ? { is_archived: true } : { is_visible: false };
       const response = await fetch(`/backend-api/conversation/${conversationId}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ is_visible: false })
+        body: JSON.stringify(body)
       });
       return response.ok;
     } catch (e) {
-      console.error(`[Bulk Delete] Error deleting ${conversationId}:`, e);
+      console.error(`[Bulk Process] Error processing ${conversationId}:`, e);
       return false;
     }
   }
@@ -1066,10 +1118,14 @@
     }
 
     const toast = document.createElement('div');
-    toast.className = `cbd-toast cbd-toast-${type}`;
+    if (type === 'success-share') {
+      toast.className = `cbd-toast cbd-toast-success cbd-toast-confirm-action`;
+    } else {
+      toast.className = `cbd-toast cbd-toast-${type}`;
+    }
 
     let iconSvg = '';
-    if (type === 'success') {
+    if (type === 'success' || type === 'success-share') {
       iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="3" class="cbd-toast-icon-svg"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
     } else if (type === 'error') {
       iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></svg>`;
@@ -1077,13 +1133,42 @@
       iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="3" class="cbd-toast-icon-svg"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></svg>`;
     }
 
-    toast.innerHTML = `
-      <div class="cbd-toast-icon-wrapper">${iconSvg}</div>
-      <div class="cbd-toast-content">${escapeHTML(message).replace(/\n/g, '<br>')}</div>
-      <button class="cbd-toast-close">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
-    `;
+    if (type === 'success-share') {
+      const shareUrl = "https://chromewebstore.google.com/detail/chatgpt-bulk-delete-manag/ebchdiehpgnonjcndecjkficmoaddnfe";
+      const tweetText = encodeURIComponent(`My ChatGPT sidebar is clean! Just cleared old chats in seconds using ChatGPT Bulk Delete Manager. Get it here: ${shareUrl}`);
+      
+      toast.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 10px; width: 100%;">
+          <div class="cbd-toast-icon-wrapper">${iconSvg}</div>
+          <div class="cbd-toast-content" style="font-weight: 700; font-size: 13px;">
+            ${escapeHTML(message)}
+            <div style="font-weight: 400; font-size: 11px; color: var(--cbd-text-muted); margin-top: 4px; line-height: 1.4;">
+              Enjoying the extension? Help others find it by sharing or leaving a rating!
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 4px;">
+          <a href="https://twitter.com/intent/tweet?text=${tweetText}" target="_blank" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; text-decoration: none; display: flex; align-items: center; background: #1da1f2; color: #fff; border: none; font-weight: 700; cursor: pointer; gap: 4px;">
+            <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
+            Share on X
+          </a>
+          <a href="${shareUrl}/reviews" target="_blank" style="padding: 6px 12px; font-size: 11px; border-radius: 6px; text-decoration: none; display: flex; align-items: center; background: var(--cbd-accent-green-start); color: #fff; border: none; font-weight: 700; cursor: pointer;">
+            Rate 5★
+          </a>
+          <button class="cbd-toast-close" style="padding: 6px; margin-left: 4px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+      `;
+    } else {
+      toast.innerHTML = `
+        <div class="cbd-toast-icon-wrapper">${iconSvg}</div>
+        <div class="cbd-toast-content">${escapeHTML(message).replace(/\n/g, '<br>')}</div>
+        <button class="cbd-toast-close">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      `;
+    }
 
     container.appendChild(toast);
 
@@ -1091,7 +1176,7 @@
 
     const dismissTimer = setTimeout(() => {
       slideOutAndRemove(toast);
-    }, 4000);
+    }, type === 'success-share' ? 12000 : 4000);
 
     toast.querySelector('.cbd-toast-close').addEventListener('click', () => {
       clearTimeout(dismissTimer);
@@ -1158,12 +1243,23 @@
 
         <!-- Hidden rate limit settings slide drawer -->
         <div class="cbd-settings-drawer" id="cbd-settings-drawer">
-          <div class="cbd-settings-drawer-title">Queue Throttle Configuration</div>
+          <div class="cbd-settings-drawer-title">Deletion Rate Limit Safeguard</div>
           <div class="cbd-settings-slider-wrapper">
             <span>Rate Delay: <strong id="cbd-delay-val">1.0s</strong></span>
             <input type="range" id="cbd-delay-slider" class="cbd-slider" min="500" max="3000" step="100" value="1000">
           </div>
-          <span style="font-size:10px; color:var(--text-muted);">Adjust spacing between API requests to avoid account warning notifications.</span>
+          <span style="font-size:10px; color:var(--text-muted); display:block; margin-bottom:12px;">Throttle the deletion frequency to stay within ChatGPT's native rate limits and prevent account restrictions.</span>
+          
+          <div class="cbd-settings-drawer-title">Action Mode</div>
+          <div style="display: flex; gap: 16px; margin-top: 6px; align-items: center;">
+            <label style="display: flex; align-items: center; font-size: 11px; color: var(--cbd-text-main); cursor: pointer; font-weight:700;">
+              <input type="radio" name="cbd-action-mode" value="delete" ${actionMode === 'delete' ? 'checked' : ''} style="margin-right: 4px; accent-color: var(--cbd-accent-green-start);"> Permanent Delete
+            </label>
+            <label style="display: flex; align-items: center; font-size: 11px; color: var(--cbd-text-main); cursor: pointer; font-weight:700;">
+              <input type="radio" name="cbd-action-mode" value="archive" ${actionMode === 'archive' ? 'checked' : ''} style="margin-right: 4px; accent-color: var(--cbd-accent-green-start);"> Native Archive
+            </label>
+          </div>
+          <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:4px;">Archiving moves conversations to your ChatGPT Archive. Deletion permanently purges them.</span>
         </div>
 
         <!-- 2. SPLIT LAYOUT: Left Card-List (60%), Right Preview (40%) -->
@@ -1268,27 +1364,33 @@
               <line x1="9" y1="18" x2="15" y2="18"></line>
               <line x1="10" y1="22" x2="14" y2="22"></line>
             </svg>
-            <span>Tip: Press Alt+B (Option+B on Mac) to toggle this dashboard</span>
+            <span>Tip: Option+B (Alt+B) to toggle dashboard</span>
           </div>
 
-          <div class="cbd-footer-badge">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2.5" style="margin-right:4px;">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-            <span>100% Private & Local &bull; Your data never leaves your browser</span>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <a href="https://github.com/fineanmol/chatgpt-bulk-delete" target="_blank" style="display: flex; align-items: center; color: var(--cbd-text-muted); text-decoration: none; font-size: 11px; gap: 4px;" class="cbd-footer-link">
+              <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+              GitHub
+            </a>
+            <div class="cbd-footer-badge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2.5" style="margin-right:4px;">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <span>100% Private</span>
+            </div>
           </div>
         </div>
 
         <!-- Progress Dialog -->
         <div class="cbd-progress-overlay">
           <div class="cbd-progress-card">
-            <div class="cbd-progress-title">Executing Mass Deletion</div>
+            <div class="cbd-progress-title">Processing Bulk Deletion Queue</div>
             <div class="cbd-progress-bar-bg">
               <div class="cbd-progress-bar-fill"></div>
             </div>
             <div class="cbd-progress-percentage">0%</div>
-            <div class="cbd-progress-stats">Deleting conversation 0 of 0</div>
+            <div class="cbd-progress-stats">Permanently deleting chat 0 of 0</div>
             <div class="cbd-status-label" id="cbd-current-title"></div>
             <button class="cbd-action-btn cbd-btn-secondary" id="cbd-cancel-btn">Abort Queue</button>
           </div>
@@ -1353,6 +1455,15 @@
       document.querySelectorAll('.cbd-card').forEach(card => card.classList.remove('previewing'));
       currentPreviewId = null;
       resetPreviewPanel();
+    });
+
+    // Radio button changes for action mode
+    overlay.querySelectorAll('input[name="cbd-action-mode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        actionMode = e.target.value;
+        localStorage.setItem('cbd-action-mode', actionMode);
+        updateStats();
+      });
     });
 
     // Slider Controls

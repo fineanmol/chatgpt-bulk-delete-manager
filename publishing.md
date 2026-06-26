@@ -40,42 +40,44 @@ Chrome Web Store submissions require a single ZIP file containing your extension
 
 Fill in the following details on the **"Store listing"** page:
 
-* **Product Title:** `ChatGPT Bulk Delete Manager`
-* **Short Description:** `Multi-select, preview, backup, and batch delete ChatGPT conversations directly in the browser for free.`
-* **Detailed Description:** Use a professional summary detailing the features:
+* **Product Title:** `Bulk Delete ChatGPT History & Chat Cleaner`
+* **Short Description:** `Bulk delete or archive ChatGPT history, search chat logs, and export conversations to Markdown instantly.`
+* **Detailed Description:** Use the following professional summary detailing the features:
   ```text
-  Quickly manage, backup, and bulk delete your ChatGPT history!
+  Clean up, organize, backup, and manage your ChatGPT history with ease!
 
-  Are you running out of sidebar space or looking to clean up hundreds of old ChatGPT conversations? ChatGPT Bulk Delete Manager gives you a desktop-grade dashboard to clean up your workspace in seconds for free!
+  Are you running out of sidebar space or want to clean up hundreds of old ChatGPT conversations? ChatGPT Bulk Delete & Archive Manager gives you a desktop-grade dashboard to manage your workspace in seconds for free!
 
   Key Features:
-  - 🚀 Live Dialogue Previews: View full message logs directly inside the preview drawer before selecting or deleting, so you never lose important chats.
-  - 💾 Mass Markdown Backups: Download selected chats as a single Markdown document to keep local archives before deletion.
-  - 🔄 Invert & Quick Filters: Select untitled "New Chats", chats older than 7d/30d, or invert your current selection in one click.
-  - 🛡️ Safe Deletion Queue: Sequentially deletes chats with customizable safety delays to prevent API rate limiting.
-  - ⌨️ Keyboard Shortcut: Press Alt+B (or Option+B on Mac) to instantly toggle the dashboard.
-  - 🔒 100% Private & Local: Operates entirely in your browser using your active session. No external servers, no tracking, and no third-party APIs.
+  - 🚀 Live Dialogue Previews: View full message logs directly inside the preview drawer before selecting, archiving, or deleting, so you never lose important chats.
+  - 📥 Native Archive & Delete: Choose between permanently deleting conversations or natively archiving them to keep your ChatGPT account clean.
+  - 🔍 Deep Keyword Search: Instantly search through chat titles AND full message histories to find exactly what you need.
+  - 💾 Mass Markdown Exports: Export selected chats to a single Markdown file to save offline backups.
+  - 🔄 Invert & Quick Filters: Select untitled "New Chats", chats older than 7d/30d, or invert selections in a single click.
+  - 🛡️ Rate Limit Safe Queue: Processes deletions sequentially with customizable delays to prevent ChatGPT rate limits and account warnings.
+  - ⌨️ Keyboard Shortcut: Press Option+B (Alt+B) to instantly toggle the dashboard.
+  - 🔒 100% Private & Local: Runs entirely in your browser. No external servers, no tracking, and no third-party APIs.
   ```
 * **Category:** Select `Productivity` or `Developer Tools`.
 * **Language:** Select `English`.
 * **Graphics Assets:**
-  * **Icon:** The `icon128.png` we created matches Chrome's 128x128 requirement.
-  * **Screenshots:** Provide at least one 1280x800 or 640x400 screenshot of the open 3-panel dashboard.
+  * **Icon:** The `icon128.png` matches Chrome's 128x128 requirement.
+  * **Screenshots:** Provide at least one screenshot of the open 3-panel dashboard (1280x800 or 640x400).
 
 ---
 
 ## Step 5: Configure Privacy & Justify Permissions (Crucial!)
 
-Google holds extension developers to strict privacy policies. Fill out the **"Privacy"** tab with these details:
+Google holds extension developers to strict privacy policies. Fill out the **"Privacy"** tab with these exact details to ensure fast approval:
 
 1. **Single Purpose Description:**
-   * *State clearly:* `The single purpose of this extension is to provide a local dashboard interface to allow users to search, preview, backup, and batch delete conversations from their active ChatGPT web session.`
+   * *State clearly:* `The single purpose of this extension is to provide a local dashboard interface to allow users to search, preview, backup, native-archive, and batch-delete conversations from their active ChatGPT web session.`
 2. **Permission Justifications:**
    * **`activeTab`**: `This permission is used to inject the manager overlay stylesheet and logic elements into the active ChatGPT page when the user opens the dashboard.`
-   * **Host Permissions (`https://chatgpt.com/*`, `https://chat.openai.com/*`)**: `These host permissions are required to allow the content script to query the web session endpoint (/api/auth/session) for authentication, retrieve conversation pagination lists (/backend-api/conversations), pull chat logs for live previewing (/backend-api/conversation/{id}), and send visibility updates to delete conversations on those specific domains.`
+   * **Host Permissions (`https://chatgpt.com/*`, `https://chat.openai.com/*`)**: `These host permissions are required to allow the content script to query the web session endpoint (/api/auth/session) for authentication, retrieve conversation pagination lists (/backend-api/conversations), pull chat logs for live previewing (/backend-api/conversation/{id}), and send PATCH visibility/archived updates to delete or archive conversations on those specific domains.`
 3. **Data Usage Declaration:**
    * Select **"No"** to: *“Does this extension collect or transmit user data?”*
-   * Check the boxes confirming you do not sell data, use data for marketing, or transfer data to third-party brokers. (The extension runs 100% locally in the sandbox).
+   * Check the boxes confirming you do not sell data, use data for marketing, or transfer data to third-party brokers (the extension runs 100% locally in the browser sandbox).
 
 ---
 
@@ -84,3 +86,4 @@ Google holds extension developers to strict privacy policies. Fill out the **"Pr
 1. Click the **"Submit for review"** button in the top right.
 2. Select whether to publish the extension automatically after approval, or manually.
 3. Review times typically take **1 to 3 business days** (Google will run automated scanners on the code and verify the permission declarations before pushing it live to the Chrome Web Store).
+
