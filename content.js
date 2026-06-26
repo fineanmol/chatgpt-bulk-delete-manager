@@ -738,7 +738,7 @@
     }
   }
 
-  // Backup selected conversations to Markdown
+  // Export selected conversations to Markdown
   async function exportSelectedConversations() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
@@ -757,7 +757,7 @@
     exportBtn.disabled = false;
     const originalText = exportBtn.innerHTML;
 
-    let markdownContent = `# ChatGPT Conversation Backup\n*Generated on ${new Date().toLocaleDateString()}*\n\n---\n\n`;
+    let markdownContent = `# ChatGPT Conversation Export\n*Generated on ${new Date().toLocaleDateString()}*\n\n---\n\n`;
     
     try {
       const token = accessToken || await fetchAccessToken();
@@ -772,7 +772,7 @@
 
         exportBtn.innerHTML = `
           <svg class="cbd-spinner-small" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="display:inline; margin-right:4px;"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path></svg>
-          Stop Backup (${i + 1}/${ids.length})
+          Stop Export (${i + 1}/${ids.length})
         `;
 
         const response = await fetch(`/backend-api/conversation/${id}`, {
@@ -807,20 +807,20 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `chatgpt-backup-${Date.now()}.md`);
+      link.setAttribute('download', `chatgpt-export-${Date.now()}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
       if (cancelExportRequested) {
-        showToast('Backup process stopped. Partial backup downloaded.', 'info');
+        showToast('Export process stopped. Partial export downloaded.', 'info');
       } else {
-        showToast(`Backup successfully created for ${ids.length} chat(s)!`, 'success');
+        showToast(`Markdown export successfully created for ${ids.length} chat(s)!`, 'success');
       }
 
     } catch (error) {
-      console.error('[Bulk Manager] Error exporting backups:', error);
-      showToast('Failed to generate backup: ' + error.message, 'error');
+      console.error('[Bulk Manager] Error exporting conversations:', error);
+      showToast('Failed to generate export: ' + error.message, 'error');
     } finally {
       isExportingChats = false;
       cancelExportRequested = false;
@@ -1003,7 +1003,7 @@
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              Export / Backup
+              Export as Markdown
             </button>
             <button class="cbd-nav-btn-danger" id="cbd-delete-btn" disabled>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;">
